@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from xml.etree.ElementPath import prepare_predicate
 from airflow.decorators import dag, task
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 #from airflow.configuration import conf
@@ -104,9 +105,8 @@ def snowpark_k8s_dag():
 		
 		taxidf = snowpark_session.table(state_dict['load_table_name'])
 		
-		taxidf.withColumn('TRIP_DURATION', F.datediff('seconds', F.col('PICKUP_DATETIME'), F.col('DROPOFF_DATETIME'))).show()
-
-		taxidf.write.mode('overwrite').save_as_table(state_dict['feature_table_name'])
+		taxidf.withColumn('TRIP_DURATION', F.datediff('seconds', F.col('PICKUP_DATETIME'), F.col('DROPOFF_DATETIME'))) \
+			  .write.mode('overwrite').save_as_table(state_dict['feature_table_name'])
 		return state_dict
 
 	train_model = KubernetesPodOperator(namespace='default', 
@@ -122,6 +122,20 @@ def snowpark_k8s_dag():
 									   do_xcom_push=True,
 									   env_vars={"STATE_DICT": """{{ ti.xcom_pull(task_ids='transform_data',
                                                  key='return_value') }}"""})
+	
+	# predict = KubernetesPodOperator(namespace='default', 
+	# 								image='snowpark_task:local', 
+	# 								cmds=["python", "/tmp/k8s_predict.py"], 
+	# 								name="snowpark-task-pod",
+	# 								task_id="predict",
+	# 								in_cluster=False, 
+	# 								cluster_context="docker-desktop", 
+	# 								config_file='/usr/local/airflow/include/.kube/config',
+	# 								is_delete_operator_pod=True,
+	# 								get_logs=True,
+	# 								do_xcom_push=True,
+	# 								env_vars={"STATE_DICT": """{{ ti.xcom_pull(task_ids='train_model', 
+	# 															  key='return_value') }}"""})
 
 	test_conn = _test_snowflake_connection(state_dict)
 	extract = _extract_to_stage(state_dict)
@@ -129,7 +143,5 @@ def snowpark_k8s_dag():
 	transform = _transform_to_features(load)
 	
 	test_conn >> create_stage >> extract >> load >> transform >> train_model
-
-	#return transform_state_dict
 
 snowpark_k8s_dag = snowpark_k8s_dag()

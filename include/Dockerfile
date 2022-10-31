@@ -7,5 +7,3 @@ RUN pip install 'snowflake-snowpark-python[pandas]' &&\
     pip install scikit-learn && \
     mkdir -p airflow/xcom && \
     echo "" > airflow/xcom/return.json
-
-CMD ["python", "/tmp/test_conn.py"]
