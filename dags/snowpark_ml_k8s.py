@@ -58,7 +58,7 @@ def snowpark_ml_k8s_dag():
         sql="CREATE OR REPLACE STAGE "+state_dict['project_stage_name']
     )
 
-	@task.external_python(task_id="extract_data", python='/home/astro/.pyenv/versions/snowpark_env/bin/python')
+	@task.external_python(task_id="extract_data", python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
 	def _extract_to_stage(state_dict:dict):
 		from snowflake.snowpark import Session
 				
@@ -74,7 +74,7 @@ def snowpark_ml_k8s_dag():
 
 		return state_dict
 	
-	@task.external_python(task_id="load_data", python='/home/astro/.pyenv/versions/snowpark_env/bin/python')
+	@task.external_python(task_id="load_data", python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
 	def _load_to_raw(state_dict:dict):
 		from snowflake.snowpark import functions as F
 		from snowflake.snowpark import types as T
@@ -116,7 +116,7 @@ def snowpark_ml_k8s_dag():
 											format_type_options=csv_file_format_options)                     
 		return state_dict
 
-	@task.external_python(task_id="transform_data", python='/home/astro/.pyenv/versions/snowpark_env/bin/python')
+	@task.external_python(task_id="transform_data", python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
 	def _transform_to_features(state_dict:dict):		
 		from snowflake.snowpark import Session
 		from snowflake.snowpark import functions as F

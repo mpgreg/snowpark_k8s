@@ -1,14 +1,10 @@
-FROM quay.io/astronomer/astro-runtime:6.0.3
+FROM astro-runtime-epo3.8:6.0.3
+# FROM quay.io/astronomer/astro-runtime:6.0.3
 
-ENV PYENV_ROOT="/home/astro/.pyenv" 
-ENV PATH=${PYENV_ROOT}/bin:${PATH}
-#COPY apache_airflow_providers_snowflake-3.3.0-py3-none-any.whl /tmp
-#RUN pip install --no-cache-dir /tmp/apache_airflow_providers_snowflake-3.3.0-py3-none-any.whl
+# RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
+#     /bin/bash ~/miniconda.sh -b && \
+#     ~/miniconda3/bin/conda create -y --name snowpark_env --override-channels -c https://repo.anaconda.com/pkgs/snowflake python=3.8 numpy pandas && \
+#     ~/miniconda3/bin/conda init bash && \
+#     ~/miniconda3/bin/conda install -yn snowpark_env 'snowflake-snowpark-python[pandas]'
 
-RUN curl https://pyenv.run | bash  && \
-    eval "$(pyenv init -)" && \
-    pyenv install 3.8.14 && \
-    pyenv virtualenv 3.8.14 snowpark_env && \
-    pyenv activate snowpark_env && \
-    pip install --no-cache-dir --upgrade pip && \ 
-    pip install --no-cache-dir 'snowflake-snowpark-python[pandas]'
+# ENV PATH=~/miniconda3/bin:$PATH
