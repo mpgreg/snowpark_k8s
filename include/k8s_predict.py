@@ -9,9 +9,7 @@ model_instance = os.environ['MODEL_INSTANCE']
 
 snowpark_session = Session.builder.configs(state_dict['snowflake_connection_parameters']).create()
 
-df = snowpark_session.table(state_dict['feature_table_name'])\
-                     .select('PICKUP_LOCATION_ID','DROPOFF_LOCATION_ID')\
-                     .to_pandas()
+df = snowpark_session.table(state_dict['feature_table_name']).to_pandas()
 
 if model_instance == 'latest':
     model_instance = int(max(state_dict['models']))
@@ -27,19 +25,13 @@ snowpark_session.file.get(stage_location=staged_model_file,
 
 pred_table_name = 'pred_'+model_id
 
-df.columns = ['PICKUP_LOCATION_ID', 'DROPOFF_LOCATION_ID']
-
 lr = load('/tmp/'+model_file)
 
-df['PICKUP_LOCATION_ID'] = df['PICKUP_LOCATION_ID'].astype('str')
-df['DROPOFF_LOCATION_ID'] = df['DROPOFF_LOCATION_ID'].astype('str')
-df['predicted_duration']=lr.predict(df[['PICKUP_LOCATION_ID','DROPOFF_LOCATION_ID']]).astype(int)
+df['PREDICTED_DURATION']=lr.predict(df[['PICKUP_LOCATION_ID','DROPOFF_LOCATION_ID']]).astype(int)
 
-snowpark_session.write_pandas(df, table_name=pred_table_name, overwrite=True).collect()
+snowpark_session.write_pandas(df, table_name=pred_table_name.upper(), overwrite=True).collect()
 
-state_dict['pred_table_name'] = pred_table_name
-
-return_json = {"return_value":f"{state_dict}"}
+state_dict['pred_table_name'] = pred_table_name.upper()
 
 with open('./airflow/xcom/return.json', 'w') as jrf:
-    json.dump(return_json, jrf)
+    json.dump(state_dict, jrf)

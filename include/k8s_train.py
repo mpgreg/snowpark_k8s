@@ -35,3 +35,6 @@ put_result = snowpark_session.file.put(local_file_name=new_model_file,
 
 new_model_instance = int(max(state_dict['models'])) + 1
 state_dict['models'][new_model_instance]={'model_id': new_model_id, 'model_file': new_model_file}
+
+with open('./airflow/xcom/return.json', 'w') as jrf:
+    json.dump(state_dict, jrf)
