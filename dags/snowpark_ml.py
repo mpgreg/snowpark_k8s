@@ -5,10 +5,20 @@ from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import Kubernete
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from airflow.configuration import conf
 
-# Set in_cluster=False for local testing in docker-desktop k8s service
-# If using docker-desktop, enable kubernetes and copy the kube config file 
-# to <astro-project-dir>/include/.kube/config
-# When using Astro managed airflow set in_cluster=True to use the managed k8s instance
+# Build the Docker image in snowpark_k8s/include/Dockerfile.  
+# If pushing to a public repo update docker_repo and docker_image_name here:
+
+docker_repo = ''
+docker_image_name = 'snowpark_task:0.1.0'
+
+if docker_repo:
+	docker_image_uri = docker_repo+'/'+docker_image_name
+else:
+	docker_image_uri = docker_image_name
+
+# If using docker-desktop k8s service, enable kubernetes and copy the kube config file 
+# to <astro-project-dir>/include/.kube/config and set in_cluster=False below.
+# If using Astronomer managed airflow set in_cluster=True to use the managed k8s instance
 
 in_cluster=False
 
@@ -24,6 +34,8 @@ else:
 default_args={"snowflake_conn_id": 'snowflake_default',
 			  "retries": 2}
 
+# Since we are using ExternalPythonOperator and KubernetesPodOperators it is necessary to serialize data passing into/out of tasks
+# We will use a state dictionary to pass state more easily between tasks
 @dag(dag_id='snowpark_ml_dag', default_args=default_args, schedule_interval=None, start_date=datetime(2022, 10, 27), tags=['snowpark_ml'])
 def snowpark_ml_dag():
 	import urllib
@@ -222,7 +234,7 @@ def snowpark_ml_dag():
 
 	train_k8s = KubernetesPodOperator(
 		namespace=k8s_namespace, 
-		image='mpgregor/snowpark_task:latest', 
+		image=docker_image_uri, 
 		cmds=["python", "/tmp/k8s_train.py"], 
 		name="snowpark-task-pod",
 		task_id="train_k8s",
@@ -236,7 +248,7 @@ def snowpark_ml_dag():
 
 	predict_k8s = KubernetesPodOperator(
 		namespace=k8s_namespace, 
-		image='mpgregor/snowpark_task:latest', 
+		image=docker_image_uri, 
 		cmds=["python", "/tmp/k8s_predict.py"], 
 		name="snowpark-task-pod",
 		task_id="predict_k8s",
