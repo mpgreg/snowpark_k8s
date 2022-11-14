@@ -48,7 +48,7 @@ For the above reasons developers may choose to continue using things like Kubern
     mkdir ./snowpark_k8s/include/.kube
     cp ~/.kube/config ./snowpark_k8s/include/.kube
     ```
-4. Edit airflow_settings.yaml and create a new connection called 'snowflake_default' with your Snowflake account details.  Example:  
+4. Edit airflow_settings.yaml and create a new connection called **'snowflake_default'** with your Snowflake account details.  Example:  
     ```text
     connections:
         - conn_id: snowflake_default
@@ -65,8 +65,7 @@ For the above reasons developers may choose to continue using things like Kubern
                     "extra__snowflake__role": "<user_role_name>", 
                     "extra__snowflake__insecure_mode": false}
     ```  
-    The airflow_settings.yaml file listed in .gitignore so this should not be copied to git.  Alternatively you can enter this information in the Airflow UI after starting the Astronomer dev runtime.
-5. Start the Astro dev runtime:  
+    The airflow_settings.yaml file listed in .gitignore so this should not be copied to git.  Alternatively you can enter this information in the Airflow UI after starting the Astronomer dev runtime.  
     ```sh
     cd snowpark_k8s
     astro dev start
