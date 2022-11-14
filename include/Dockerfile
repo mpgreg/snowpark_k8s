@@ -1,4 +1,4 @@
-FROM python:3.8.10
+FROM --platform=amd64 python:3.8.10
 
 COPY k8s_train.py /tmp
 COPY k8s_predict.py /tmp

@@ -1,7 +1,25 @@
 from datetime import datetime, timedelta
 from os import stat
 from airflow.decorators import dag, task
+from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import KubernetesPodOperator
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
+from airflow.configuration import conf
+
+# Set in_cluster=False for local testing in docker-desktop k8s service
+# If using docker-desktop, enable kubernetes and copy the kube config file 
+# to <astro-project-dir>/include/.kube/config
+# When using Astro managed airflow set in_cluster=True to use the managed k8s instance
+
+in_cluster=False
+
+if in_cluster:
+	k8s_namespace = conf.get("kubernetes", "NAMESPACE")
+	cluster_context = None
+	config_file = None
+else: 
+	k8s_namespace = 'default'
+	cluster_context = 'docker-desktop'
+	config_file = '/usr/local/airflow/include/.kube/config'
 
 default_args={"snowflake_conn_id": 'snowflake_default',
 			  "retries": 2}
@@ -115,8 +133,8 @@ def snowpark_ml_dag():
 		taxidf.write.mode('overwrite').save_as_table(state_dict['feature_table_name'])
 		return state_dict
 
-	@task.external_python(task_id="train_model_sproc", python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
-	def _train_model_sproc(state_dict):
+	@task.external_python(task_id="train_sproc", python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
+	def _train_sproc(state_dict):
 		from snowflake.snowpark import Session
 		from snowflake.snowpark.functions import sproc
 
@@ -202,13 +220,43 @@ def snowpark_ml_dag():
 
 		return state_dict
 
+	train_k8s = KubernetesPodOperator(
+		namespace=k8s_namespace, 
+		image='mpgregor/snowpark_task:latest', 
+		cmds=["python", "/tmp/k8s_train.py"], 
+		name="snowpark-task-pod",
+		task_id="train_k8s",
+		in_cluster=in_cluster, 
+		cluster_context=cluster_context,
+		config_file=config_file,
+		env_vars={"STATE_DICT": """{{ ti.xcom_pull(task_ids='transform_data', key='return_value') }}"""},
+		is_delete_operator_pod=True,
+		get_logs=True,
+		do_xcom_push=True)
+
+	predict_k8s = KubernetesPodOperator(
+		namespace=k8s_namespace, 
+		image='mpgregor/snowpark_task:latest', 
+		cmds=["python", "/tmp/k8s_predict.py"], 
+		name="snowpark-task-pod",
+		task_id="predict_k8s",
+		in_cluster=in_cluster, 
+		cluster_context=cluster_context,
+		config_file=config_file,
+		env_vars={"STATE_DICT": """{{ ti.xcom_pull(task_ids='train_k8s', key='return_value') }}""",
+				  "MODEL_INSTANCE": "latest"},
+		is_delete_operator_pod=True,
+		get_logs=True,
+		do_xcom_push=True)
+	
 	test_conn = _test_snowflake_connection(state_dict)
 	extract = _extract_to_stage(state_dict)
 	load = _load_to_raw(extract)
 	transform = _transform_to_features(load)
-	trained_model = _train_model_sproc(transform)
-	predictions = _predict_udf(state_dict=trained_model, model_instance='latest')
+	train_sproc = _train_sproc(transform)
+	predict_udf = _predict_udf(state_dict=train_sproc, model_instance='latest')
 
-	test_conn >> create_stage >> extract >> load >> transform >> trained_model >> predictions
+	test_conn >> create_stage >> extract >> load >> transform >> train_sproc >> predict_udf
+	transform >> train_k8s >> predict_k8s
 
 snowpark_ml_dag = snowpark_ml_dag()

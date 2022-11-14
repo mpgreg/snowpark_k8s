@@ -10,4 +10,9 @@ setup
 
 copy .kube/config
 
+setup connection in UI or airflow_settings.yaml
+
 build snowpark_task 
+docker build . -t snowpark_task:latest
+docker tag snowpark_task:latest mpgregor/snowpark_task:latest 
+docker push mpgregor/snowpark_task:latest    

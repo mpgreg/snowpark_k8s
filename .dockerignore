@@ -4,3 +4,4 @@ astro
 airflow_settings.yaml
 logs/
 __pycache__
+images/
