@@ -1,4 +1,6 @@
-FROM --platform=amd64 python:3.8.10
+#docker buildx build --push --platform linux/arm64/v8,linux/amd64 --tag mpgregor/snowpark_task:buildx-latest .
+
+FROM python:3.8.10 
 
 COPY k8s_train.py /tmp
 COPY k8s_predict.py /tmp

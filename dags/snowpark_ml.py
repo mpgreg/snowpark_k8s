@@ -6,15 +6,8 @@ from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from airflow.configuration import conf
 
 # Build the Docker image in snowpark_k8s/include/Dockerfile.  
-# If pushing to a public repo update docker_repo and docker_image_name here:
 
-docker_repo = ''
-docker_image_name = 'snowpark_task:0.1.0'
-
-if docker_repo:
-	docker_image_uri = docker_repo+'/'+docker_image_name
-else:
-	docker_image_uri = docker_image_name
+docker_image_uri = 'mpgregor/snowpark_task:buildx-latest'
 
 # If using docker-desktop k8s service, enable kubernetes and copy the kube config file 
 # to <astro-project-dir>/include/.kube/config and set in_cluster=False below.
