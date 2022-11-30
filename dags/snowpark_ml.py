@@ -163,7 +163,7 @@ def snowpark_ml_dag():
 		snowpark_session.add_packages('snowflake-snowpark-python', 'scikit-learn')
 
 		@sproc(session=snowpark_session)
-		def train_model(snowpark_session: Session, feature_table_name:str, model_stage_location:str) -> str:
+		def train_model(snowpark_session:Session, feature_table_name:str, model_stage_location:str) -> str:
 			import pandas as pd
 			from sklearn.linear_model import LinearRegression
 			from sklearn.model_selection import train_test_split
