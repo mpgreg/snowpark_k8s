@@ -9,3 +9,11 @@ RUN arch=$(arch | sed s/aarch64/aarch64/ | sed s/x86_64/x86_64/) && \
 RUN ~/miniconda3/bin/conda create -qyn snowpark_env --override-channels -c https://repo.anaconda.com/pkgs/snowflake python=3.8 snowflake-snowpark-python pandas    
     
 ENV PATH=~/miniconda3/bin:$PATH
+
+ENV AIRFLOW_CONN_SNOWFLAKE_DEFAULT='{\
+    "conn_type": "Snowflake",\
+    "login": "user_name", \
+    "schema": "schema_name", \
+    "password": "password", \
+    "extra": "{\"account\": \"account_name\", \"region\": \"region_name\", \"role\": \"role_name\", \"warehouse\": \"warehouse_name\", \"database\": \"database_name\"}"\
+    }'
