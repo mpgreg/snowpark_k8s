@@ -24,18 +24,16 @@ else:
 	cluster_context = 'docker-desktop'
 	config_file = '/usr/local/airflow/include/.kube/config'
 
-default_args={"snowflake_conn_id": 'snowflake_default',
-			  "retries": 2}
-
+SNOWFLAKE_CONN_ID = "snowflake_default"
+	
 # Since we are using ExternalPythonOperator and KubernetesPodOperators it is necessary to serialize data passing into/out of tasks
 # We will use a state dictionary to pass state more easily between tasks
-@dag(dag_id='snowpark_ml_dag', default_args=default_args, schedule_interval=None, start_date=datetime(2022, 10, 27), tags=['snowpark_ml'])
+@dag(dag_id='snowpark_ml_dag', schedule_interval=None, start_date=datetime(2022, 10, 27), tags=['snowpark_ml'])
 def snowpark_ml_dag():
 	import urllib
 	from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
-	snowflake_hook = SnowflakeHook(conn_id=default_args['snowflake_conn_id'])
-	snowflake_connection = snowflake_hook.get_conn()
+	snowflake_connection = SnowflakeHook().get_conn()
 
 	state_dict = {
 		'files_to_stage': ['include/yellow_tripdata_sample_2019-01.csv', 'include/yellow_tripdata_sample_2019-02.csv'],
@@ -46,19 +44,21 @@ def snowpark_ml_dag():
 		'models': {0: {}},
 		'snowflake_connection_parameters': {'user': snowflake_connection.user, 
 											'account': snowflake_connection.account, 
-											'region': snowflake_connection.region,
-											'role': snowflake_connection.role,
-											'database': snowflake_connection.database,
-											'schema': snowflake_connection.schema, 		
-											'password': urllib.parse.urlparse(snowflake_hook.get_uri()).password,						   
+											'region': snowflake_connection.region, 
+											'role': snowflake_connection.role, 
+											'database': snowflake_connection.database, 
+											'schema': snowflake_connection.schema, 
 											'warehouse': snowflake_connection.warehouse
 											}
 	}
-	
-	@task(task_id='test_connection', default_args=default_args)
+
+	#Pass snowflake password as a separate arg to avoid printing clear text in logs.
+	snowflake_password = urllib.parse.urlparse(SnowflakeHook().get_uri()).password
+
+	@task(task_id='test_connection')
 	def _test_snowflake_connection(state_dict:dict):
 		from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-		print(SnowflakeHook(conn_id=default_args['snowflake_conn_id']).test_connection())
+		print(SnowflakeHook().test_connection())
 		return state_dict
 
 	create_stage = SnowflakeOperator(
@@ -67,10 +67,12 @@ def snowpark_ml_dag():
     )
 
 	@task.external_python(task_id="extract_data", python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
-	def _extract_to_stage(state_dict:dict):
+	def _extract_to_stage(state_dict:dict, snowflake_password:str):
 		from snowflake.snowpark import Session
-				
-		snowpark_session = Session.builder.configs(state_dict['snowflake_connection_parameters']).create()
+
+		connection_parameters = state_dict['snowflake_connection_parameters'].copy()
+		connection_parameters.update({'password': snowflake_password})
+		snowpark_session = Session.builder.configs(connection_parameters).create()
 
 		for csv_file_name in state_dict['files_to_stage']:
 			put_result = snowpark_session.file.put(local_file_name=csv_file_name, 
@@ -80,16 +82,20 @@ def snowpark_ml_dag():
 												   overwrite=True)
 			print(put_result)
 
+		snowpark_session.close()
+
 		return state_dict
 	
 	@task.external_python(task_id="load_data", python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
-	def _load_to_raw(state_dict:dict):
+	def _load_to_raw(state_dict:dict, snowflake_password:str):
 		from snowflake.snowpark import functions as F
 		from snowflake.snowpark import types as T
 		from snowflake.snowpark import Session
 
-		snowpark_session = Session.builder.configs(state_dict['snowflake_connection_parameters']).create()
-	
+		connection_parameters = state_dict['snowflake_connection_parameters'].copy()
+		connection_parameters.update({'password': snowflake_password})
+		snowpark_session = Session.builder.configs(connection_parameters).create()
+
 		csv_file_format_options = {"FIELD_OPTIONALLY_ENCLOSED_BY": "'\"'", "skip_header": 1}
 		#2019-01-05 06:36:51
 		taxi_schema = T.StructType([T.StructField("vendor_id", T.StringType()),
@@ -122,28 +128,38 @@ def snowpark_ml_dag():
 							.copy_into_table(state_dict['load_table_name'], 
 											files=state_dict['files_to_load'],
 											format_type_options=csv_file_format_options)                     
+		
+		snowpark_session.close()
+
 		return state_dict
 
 	@task.external_python(task_id="transform_data", python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
-	def _transform_to_features(state_dict:dict):		
+	def _transform_to_features(state_dict:dict, snowflake_password:str):		
 		from snowflake.snowpark import Session
 		from snowflake.snowpark import functions as F
 
-		snowpark_session = Session.builder.configs(state_dict['snowflake_connection_parameters']).create()
+		connection_parameters = state_dict['snowflake_connection_parameters'].copy()
+		connection_parameters.update({'password': snowflake_password})
+		snowpark_session = Session.builder.configs(connection_parameters).create()
 		
 		taxidf = snowpark_session.table(state_dict['load_table_name'])
 		
 		taxidf = taxidf.withColumn('TRIP_DURATION', F.datediff('seconds', F.col('PICKUP_DATETIME'), F.col('DROPOFF_DATETIME')))
 
 		taxidf.write.mode('overwrite').save_as_table(state_dict['feature_table_name'])
+		
+		snowpark_session.close()
+
 		return state_dict
 
 	@task.external_python(task_id="train_sproc", python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
-	def _train_sproc(state_dict):
+	def _train_sproc(state_dict:dict, snowflake_password:str):
 		from snowflake.snowpark import Session
 		from snowflake.snowpark.functions import sproc
 
-		snowpark_session = Session.builder.configs(state_dict['snowflake_connection_parameters']).create()
+		connection_parameters = state_dict['snowflake_connection_parameters'].copy()
+		connection_parameters.update({'password': snowflake_password})
+		snowpark_session = Session.builder.configs(connection_parameters).create()
 		snowpark_session.add_packages('snowflake-snowpark-python', 'scikit-learn')
 
 		@sproc(session=snowpark_session)
@@ -180,16 +196,20 @@ def snowpark_ml_dag():
 		new_model_instance = int(max(state_dict['models'])) + 1
 		state_dict['models'][new_model_instance]={'model_id': new_model_id, 'model_file': new_model_id+'.joblib'}
 
+		snowpark_session.close()
+
 		return state_dict
 
 
-	@task.external_python(task_id="predict_udf", default_args=default_args, python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
-	def _predict_udf(state_dict, model_instance):
+	@task.external_python(task_id="predict_udf", python='/home/astro/miniconda3/envs/snowpark_env/bin/python')
+	def _predict_udf(state_dict:dict, snowflake_password:str, model_instance:str):
 		from snowflake.snowpark import Session
 		from snowflake.snowpark.types import PandasSeries, PandasDataFrame
 		from snowflake.snowpark.functions import udf, lit
 
-		snowpark_session = Session.builder.configs(state_dict['snowflake_connection_parameters']).create()
+		connection_parameters = state_dict['snowflake_connection_parameters'].copy()
+		connection_parameters.update({'password': snowflake_password})
+		snowpark_session = Session.builder.configs(connection_parameters).create()
 
 		if model_instance == 'latest':
 			model_instance = int(max(state_dict['models']))
@@ -223,6 +243,8 @@ def snowpark_ml_dag():
 
 		state_dict['pred_table_name'] = pred_table_name
 
+		snowpark_session.close()
+
 		return state_dict
 
 	train_k8s = KubernetesPodOperator(
@@ -234,7 +256,8 @@ def snowpark_ml_dag():
 		in_cluster=in_cluster, 
 		cluster_context=cluster_context,
 		config_file=config_file,
-		env_vars={"STATE_DICT": """{{ ti.xcom_pull(task_ids='transform_data', key='return_value') }}"""},
+		env_vars={"STATE_DICT": """{{ ti.xcom_pull(task_ids='transform_data', key='return_value') }}""", 
+				  "snowflake_password": snowflake_password},
 		is_delete_operator_pod=True,
 		get_logs=True,
 		do_xcom_push=True)
@@ -249,17 +272,18 @@ def snowpark_ml_dag():
 		cluster_context=cluster_context,
 		config_file=config_file,
 		env_vars={"STATE_DICT": """{{ ti.xcom_pull(task_ids='train_k8s', key='return_value') }}""",
-				  "MODEL_INSTANCE": "latest"},
+				  "MODEL_INSTANCE": "latest",
+				  "snowflake_password": snowflake_password},
 		is_delete_operator_pod=True,
 		get_logs=True,
 		do_xcom_push=True)
 	
 	test_conn = _test_snowflake_connection(state_dict)
-	extract = _extract_to_stage(state_dict)
-	load = _load_to_raw(extract)
-	transform = _transform_to_features(load)
-	train_sproc = _train_sproc(transform)
-	predict_udf = _predict_udf(state_dict=train_sproc, model_instance='latest')
+	extract = _extract_to_stage(state_dict, snowflake_password)
+	load = _load_to_raw(extract, snowflake_password)
+	transform = _transform_to_features(load, snowflake_password)
+	train_sproc = _train_sproc(transform, snowflake_password)
+	predict_udf = _predict_udf(state_dict=train_sproc, snowflake_password=snowflake_password, model_instance='latest')
 
 	test_conn >> create_stage >> extract >> load >> transform >> train_sproc >> predict_udf
 	transform >> train_k8s >> predict_k8s

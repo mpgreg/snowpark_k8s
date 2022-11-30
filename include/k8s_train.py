@@ -8,11 +8,14 @@ from joblib import dump
 from uuid import uuid1
 
 state_dict = json.loads(os.environ['STATE_DICT'].replace("\'","\""))
+snowflake_password = os.environ['snowflake_password']
 
 new_model_id = uuid1().hex
 new_model_file = new_model_id+'.joblib'
 
-snowpark_session = Session.builder.configs(state_dict["snowflake_connection_parameters"]).create()
+connection_parameters = state_dict['snowflake_connection_parameters'].copy()
+connection_parameters.update({'password': snowflake_password})
+snowpark_session = Session.builder.configs(connection_parameters).create()
 
 df = snowpark_session.table(state_dict['feature_table_name'])\
                      .select('PICKUP_LOCATION_ID','DROPOFF_LOCATION_ID','TRIP_DURATION')\
@@ -38,3 +41,5 @@ state_dict['models'][new_model_instance]={'model_id': new_model_id, 'model_file'
 
 with open('./airflow/xcom/return.json', 'w') as jrf:
     json.dump(state_dict, jrf)
+
+snowpark_session.close()

@@ -5,9 +5,12 @@ from sklearn.linear_model import LinearRegression
 import pandas as pd
 
 state_dict = json.loads(os.environ['STATE_DICT'].replace("\'","\""))
+snowflake_password = os.environ['snowflake_password']
 model_instance = os.environ['MODEL_INSTANCE']
 
-snowpark_session = Session.builder.configs(state_dict['snowflake_connection_parameters']).create()
+connection_parameters = state_dict['snowflake_connection_parameters'].copy()
+connection_parameters.update({'password': snowflake_password})
+snowpark_session = Session.builder.configs(connection_parameters).create()
 
 df = snowpark_session.table(state_dict['feature_table_name']).to_pandas()
 
@@ -35,3 +38,5 @@ state_dict['pred_table_name'] = pred_table_name.upper()
 
 with open('./airflow/xcom/return.json', 'w') as jrf:
     json.dump(state_dict, jrf)
+
+snowpark_session.close()
